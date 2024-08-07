@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 import os
 import re
 
+from flask_cors import CORS
 from langchain_openai import ChatOpenAI
 from langchain.memory import ConversationSummaryBufferMemory
 from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
@@ -11,15 +12,17 @@ from langchain.schema.runnable import RunnablePassthrough
 from news_summary import summarize_news
 from ocr import ocr_with_clova
 from parse import parse_ocr_data
-from query_generator import generate_sql_query
+from query_generator import generate_sql_query, execute_and_convert_to_natural_language
 from sql_executor import execute_sql_query
 import openai
+from db import get_database_engine  # 여기서 db 모듈에서 함수 가져오기
 
 # .env 파일의 경로를 명시적으로 설정
 dotenv_path = os.path.join(os.path.dirname(__file__), 'env/.env')
 load_dotenv(dotenv_path=dotenv_path)
 
 app = Flask(__name__)
+CORS(app)
 
 
 def load_environment_variables():
@@ -71,9 +74,13 @@ def query_expenses():
     try:
         generated_query = generate_sql_query(user_question)
         print("Generated SQL Query:", generated_query)
-        result = execute_sql_query(generated_query)
-        print("Query Result:", result)
-        return jsonify({"query": generated_query, "response": result})
+
+        # Execute SQL query and convert result to natural language
+        engine = get_database_engine()
+        natural_language_response = execute_and_convert_to_natural_language(engine, generated_query)
+        print("Natural Language Response:", natural_language_response)
+
+        return jsonify({"query": generated_query, "response": natural_language_response})
     except Exception as e:
         return jsonify({"error": f"서버 오류 발생: {e}"}), 500
 
