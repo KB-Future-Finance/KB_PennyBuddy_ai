@@ -1,13 +1,17 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, Response
 from dotenv import load_dotenv
 import os
 import re
+import threading
+import queue
 
 from flask_cors import CORS
 from langchain_openai import ChatOpenAI
 from langchain.memory import ConversationSummaryBufferMemory
 from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain.schema import HumanMessage, AIMessage, SystemMessage
 from langchain.schema.runnable import RunnablePassthrough
+from langchain.callbacks.base import BaseCallbackHandler
 
 from news_summary import summarize_news
 from ocr import ocr_with_clova
@@ -15,7 +19,7 @@ from parse import parse_ocr_data
 from query_generator import generate_sql_query, execute_and_convert_to_natural_language
 from sql_executor import execute_sql_query
 import openai
-from db import get_database_engine  # 여기서 db 모듈에서 함수 가져오기
+from db import get_database_engine
 
 # .env 파일의 경로를 명시적으로 설정
 dotenv_path = os.path.join(os.path.dirname(__file__), 'env/.env')
@@ -24,14 +28,12 @@ load_dotenv(dotenv_path=dotenv_path)
 app = Flask(__name__)
 CORS(app)
 
-
 def load_environment_variables():
     required_vars = ['DB_USER', 'DB_PASSWORD', 'DB_HOST', 'DB_PORT', 'DB_NAME', 'OPENAI_API_KEY', 'CLOVA_API_KEY',
                      'CLOVA_ENDPOINT', 'LANGCHAIN_ENDPOINT']
     for var in required_vars:
         if not os.getenv(var):
             raise ValueError(f"Environment variable {var} is missing")
-
 
 load_environment_variables()
 
@@ -45,10 +47,8 @@ memory = ConversationSummaryBufferMemory(
     return_messages=True,
 )
 
-
 def load_memory():
     return memory.load_memory_variables({})["chat_history"]
-
 
 prompt = ChatPromptTemplate.from_messages([
     ("system", "You are a helpful AI talking to human"),
@@ -56,11 +56,65 @@ prompt = ChatPromptTemplate.from_messages([
     ("human", "{question}"),
 ])
 
-# `RunnablePassthrough`와 함께 사용할 람다 함수를 정의합니다
 get_chat_history_func = lambda: load_memory()
 
 chain = RunnablePassthrough.assign(chat_history=get_chat_history_func) | prompt | llm
 
+class ThreadedGenerator:
+    def __init__(self):
+        self.queue = queue.Queue()
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        item = self.queue.get()
+        if item is StopIteration:
+            raise item
+        return item
+
+    def send(self, data):
+        self.queue.put(data)
+
+    def close(self):
+        self.queue.put(StopIteration)
+
+
+class ChainStreamHandler(BaseCallbackHandler):
+    def __init__(self, gen):
+        self.gen = gen
+
+    def on_llm_new_token(self, token: str, **kwargs):
+        self.gen.send(token)
+
+def llm_thread(g, prompt):
+    try:
+        chat = ChatOpenAI(
+            api_key=openai_api_key,
+            verbose=True,
+            streaming=True,
+            callbacks=[ChainStreamHandler(g)],
+            temperature=0.7,
+        )
+        chat([HumanMessage(content=prompt)])
+    finally:
+        g.close()
+
+def chain_stream(prompt):
+    g = ThreadedGenerator()
+    threading.Thread(target=llm_thread, args=(g, prompt)).start()
+    return g
+
+@app.route('/chatbot/', methods=['POST'])
+def chatbot():
+    print('chatbot 실행됨')
+    data = request.json
+    user_input = data.get('question', '')
+
+    if not user_input:
+        return jsonify({"error": "메시지가 제공되지 않았습니다."}), 400
+
+    return Response(chain_stream(user_input), mimetype='text/plain')
 
 @app.route('/execute-sql/', methods=['POST'])
 def query_expenses():
@@ -71,19 +125,18 @@ def query_expenses():
     if not user_question:
         return jsonify({"error": "질문이 제공되지 않았습니다."}), 400
 
-    try:
-        generated_query = generate_sql_query(user_question)
-        print("Generated SQL Query:", generated_query)
+    def stream_sql_response():
+        try:
+            generated_query = generate_sql_query(user_question)
 
-        # Execute SQL query and convert result to natural language
-        engine = get_database_engine()
-        natural_language_response = execute_and_convert_to_natural_language(engine, generated_query)
-        print("Natural Language Response:", natural_language_response)
+            # Execute SQL query and convert result to natural language
+            engine = get_database_engine()
+            natural_language_response = execute_and_convert_to_natural_language(engine, generated_query)
+            yield f"{natural_language_response}"
+        except Exception as e:
+            yield f"서버 오류 발생: {e}\n"
 
-        return jsonify({"query": generated_query, "response": natural_language_response})
-    except Exception as e:
-        return jsonify({"error": f"서버 오류 발생: {e}"}), 500
-
+    return Response(stream_sql_response(), mimetype='text/plain')
 
 @app.route('/parse-ocr/', methods=['POST'])
 def parse_ocr():
@@ -119,41 +172,20 @@ def parse_ocr():
         print(f"서버 오류 발생: {e}")
         return jsonify({"error": f"서버 오류 발생: {e}"}), 500
 
-
 @app.route('/summarize-news/', methods=['GET'])
 def summarize_news_endpoint():
     """뉴스 기사 링크를 요약"""
-    response = summarize_news()
-    return jsonify(response)
+    def stream_news_summary():
+        try:
+            response = summarize_news()
+            yield f"{response.get('response')}"
+            yield f"웹사이트 link : {response.get('url')}"
+        except Exception as e:
+            yield f"서버 오류 발생: {e}\n"
 
+    return Response(stream_news_summary(), mimetype='text/plain')
 
 openai.api_key = os.getenv('OPENAI_API_KEY')
-
-
-@app.route('/chatbot/', methods=['POST'])
-def chatbot():
-    data = request.json
-    user_input = data.get('question', '')
-
-    chat = ChatOpenAI(openai_api_key=os.getenv('OPENAI_API_KEY'))
-
-    if not user_input:
-        return jsonify({"error": "메시지가 제공되지 않았습니다."}), 400
-
-    chat_prompt = ChatPromptTemplate.from_messages([
-        ("system", "너는 AI 금융 매니저 패니버디야."),
-        ("user", "{user_input}"),
-    ])
-
-    chain = chat_prompt | chat
-    chain.invoke({"user_input": user_input})
-
-    # ChatGPT로 응답 생성
-    response = chain.invoke({"user_input": user_input}).content
-
-    # 응답을 JSON 형태로 반환
-    return jsonify({"response": response})
-
 
 def analyze_input(user_input):
     if "뉴스" in user_input:
@@ -165,9 +197,7 @@ def analyze_input(user_input):
     else:
         return "chatbot"
 
-
 def is_expense_query(user_input):
-    # 정규 표현식을 사용하여 가계부 관련 질문을 인식
     expense_patterns = [
         r"\d{4}\s*년\s*\d{1,2}\s*월\s*에\s*얼마\s*썼어",         # 2024년 7월에 얼마 썼어
         r"\d{2}\s*년\s*\d{1,2}\s*월\s*에\s*얼마\s*썼어",          # 24년 7월에 얼마 썼어
@@ -176,7 +206,14 @@ def is_expense_query(user_input):
         r"여태까지\s*쓴\s*지출\s*내역\s*(알려줘)?",             # 여태까지 쓴 지출 내역 알려줘
         r"지난\s*달\s*소비\s*내역\s*(알려줘)?",                 # 지난 달 소비 내역 알려줘
         r"이번\s*달\s*지출\s*(알려줘)?",                       # 이번 달 지출 알려줘
-        r"최근\s*소비\s*기록\s*(알려줘)?"                      # 최근 소비 기록 알려줘
+        r"최근\s*소비\s*기록\s*(알려줘)?",                      # 최근 소비 기록 알려줘
+        r"소비",
+        r"얼마",
+        r"지출",
+        r"수입",
+        r"수익",
+        r"내역",
+        r"자산",
     ]
     for pattern in expense_patterns:
         if re.search(pattern, user_input):
@@ -204,7 +241,6 @@ def analyze_and_execute():
         response = chatbot()
 
     return response
-
 
 if __name__ == '__main__':
     app.run(debug=True)

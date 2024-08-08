@@ -66,6 +66,7 @@ def summarize_news():
     try:
         article_url = get_article_link(search_url, n)
         summary = summarize_url(article_url)
+        print(summary)
         return {"url": article_url, "response": summary}
     except ValueError as e:
         return {"error": str(e)}, 400

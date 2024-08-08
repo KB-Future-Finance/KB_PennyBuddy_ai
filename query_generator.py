@@ -10,7 +10,10 @@ from sqlalchemy.engine import Engine  # 여기에 Engine을 import
 
 def generate_sql_query(user_question: str) -> str:
     """사용자 질문에 기반한 SQL 쿼리 생성"""
-    template = """Based on the table schema below, write a SQL query that would answer the user's question:
+    template = """Based on the table schema below, write a SQL query that would answer the user's question if the categoryType in the Category table is 1, then it is income and 2, then it is expenditure. You should also think about this when finding the total spend and use join.
+    If we wanted to get the current assets, we'd need to subtract total expenses from total revenue, right? We'd need to join the category table, and records's delYn is deleted or not. If delYn = Trun, it is deleted data and should not be aggregated.
+
+    
     {schema}
 
     Question: {question}
@@ -44,7 +47,7 @@ def execute_and_convert_to_natural_language(engine: Engine, sql_query: str) -> s
         result = connection.execute(text(sql_query)).fetchall()
         result_str = str(result)
 
-    template = """아래 SQL 쿼리 결과가 주어지면 이를 자연어 응답으로 변환합니다.:
+    template = """아래 SQL 쿼리 결과가 주어지면 이를 해석해서 금액만을 알려줘 어린아이도 알기 쉽게 대답해줘 지출이면 -, 수익이면 + 를 붙여서 귀엽고 위트있게 말해 그리고 리스트가 여러개면 \\n 을 사용해줘, 다른 :
     SQL Query: {query}
     SQL Result: {result}
     Natural Language Response:"""
@@ -60,6 +63,7 @@ def execute_and_convert_to_natural_language(engine: Engine, sql_query: str) -> s
     )
 
     input_data = {"query": sql_query, "result": result_str}
+    print(input_data)
     natural_language_response = response_chain.invoke(input_data).content.strip()
 
     return natural_language_response
