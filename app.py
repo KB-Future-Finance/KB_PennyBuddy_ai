@@ -50,7 +50,7 @@ def load_memory():
     return memory.load_memory_variables({})["chat_history"]
 
 prompt = ChatPromptTemplate.from_messages([
-    ("system", "당신은 사람과 대화하는 친절한 가계부 AI 챗봇입니다. 키키라는 이름을 가지고 있어. "),
+    ("system", "너는 사람과 대화하는 친절한 가계부 AI 키키 야.   "),
     MessagesPlaceholder(variable_name="chat_history"),
     ("human", "{question}"),
 ])

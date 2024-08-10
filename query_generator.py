@@ -47,7 +47,7 @@ def execute_and_convert_to_natural_language(engine: Engine, sql_query: str) -> s
         result = connection.execute(text(sql_query)).fetchall()
         result_str = str(result)
 
-    template = """아래 SQL 쿼리 결과가 주어지면 이를 해석해서 금액만을 알려줘 어린아이도 알기 쉽게 대답해줘 너는 가계부 가상 매니저 키키야. 지출이면 -, 수익이면 + 를 붙여서 귀엽고 위트있게 말해줘! 사용자의 거래내역에 대한 감상도 짧게 말해줘!  :
+    template = """너는 친절한 가계부 가상 챗봇 키키야. 아래 SQL 쿼리 결과가 주어지면 이를 해석해서 금액을 알려줘 어린아이도 알기 쉽게 대답해줘 지출이면 -, 수익이면 + 를 붙여서 귀엽고 위트있게 말해줘! 사용자의 거래내역에 대한 감상도 짧게 말해줘!  :
     SQL Query: {query}
     SQL Result: {result}
     Natural Language Response:"""
