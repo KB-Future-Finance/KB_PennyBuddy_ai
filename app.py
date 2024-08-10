@@ -17,7 +17,6 @@ from news_summary import summarize_news
 from ocr import ocr_with_clova
 from parse import parse_ocr_data
 from query_generator import generate_sql_query, execute_and_convert_to_natural_language
-from sql_executor import execute_sql_query
 import openai
 from db import get_database_engine
 
@@ -51,7 +50,7 @@ def load_memory():
     return memory.load_memory_variables({})["chat_history"]
 
 prompt = ChatPromptTemplate.from_messages([
-    ("system", "You are a helpful AI talking to human"),
+    ("system", "당신은 사람과 대화하는 친절한 가계부 AI 챗봇입니다. 키키라는 이름을 가지고 있어. "),
     MessagesPlaceholder(variable_name="chat_history"),
     ("human", "{question}"),
 ])
@@ -129,7 +128,6 @@ def query_expenses():
         try:
             generated_query = generate_sql_query(user_question)
 
-            # Execute SQL query and convert result to natural language
             engine = get_database_engine()
             natural_language_response = execute_and_convert_to_natural_language(engine, generated_query)
             yield f"{natural_language_response}"
@@ -164,7 +162,7 @@ def parse_ocr():
         print("Parsed OCR Data:", result)
 
         os.remove(file_location)
-
+        print(result.dict);
         return jsonify(result.dict())
     except FileNotFoundError:
         return jsonify({"error": "파일을 찾을 수 없습니다."}), 500
@@ -190,8 +188,8 @@ openai.api_key = os.getenv('OPENAI_API_KEY')
 def analyze_input(user_input):
     if "뉴스" in user_input:
         return "summarize-news"
-    elif "OCR" in user_input:
-        return "parse-ocr"
+    # elif "OCR" in user_input:
+    #     return "parse-ocr"
     elif is_expense_query(user_input):
         return "execute-sql"
     else:
@@ -207,13 +205,7 @@ def is_expense_query(user_input):
         r"지난\s*달\s*소비\s*내역\s*(알려줘)?",                 # 지난 달 소비 내역 알려줘
         r"이번\s*달\s*지출\s*(알려줘)?",                       # 이번 달 지출 알려줘
         r"최근\s*소비\s*기록\s*(알려줘)?",                      # 최근 소비 기록 알려줘
-        r"소비",
-        r"얼마",
-        r"지출",
-        r"수입",
-        r"수익",
-        r"내역",
-        r"자산",
+        r"소비", r"얼마", r"지출", r"수입", r"수익", r"내역", r"자산",
     ]
     for pattern in expense_patterns:
         if re.search(pattern, user_input):
