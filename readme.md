@@ -32,6 +32,9 @@ pip install -r requirements.txt
 
 # 서버 실행
 python app.py
+
+### 의존성 에러 발생 시 추가 실행
+pip install -U langchain-community
 ```
 구현 기능
 
