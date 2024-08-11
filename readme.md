@@ -27,13 +27,15 @@
 ## 실행 방법
 
 ```bash
-# 필요한 패키지 설치
+# 1. 필요한 패키지 설치
 pip install -r requirements.txt
 
-# 서버 실행
+# 2. env/.env 에 자신의 DB 와 API key 추가.
+
+# 3. 서버 실행
 python app.py
 
-### 의존성 에러 발생 시 추가 실행
+### 3-1. 의존성 에러 발생 시 추가 실행
 pip install -U langchain-community
 ```
 구현 기능
