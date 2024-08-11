@@ -89,7 +89,10 @@ ipython_config.py
 # pyenv
 #   For a library or package, you might want to ignore these files since the code is
 #   intended to run in multiple environments; otherwise, check them in:
-env/.env
+
+# 배포용 env
+# env/.env
+
 
 # pipenv
 #   According to pypa/pipenv#598, it is recommended to include Pipfile.lock in version control.
@@ -125,12 +128,12 @@ celerybeat.pid
 
 # Environments
 .venv
-env/
+dev_env/
 venv/
 ENV/
 env.bak/
 venv.bak/
-env/.env
+#env/.env
 # Spyder project settings
 .spyderproject
 .spyproject
